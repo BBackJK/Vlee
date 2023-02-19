@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <script src="vlee.js"></script>
+  </head>
+  <body>
+    <script>
+      const temp = null;
+      const validationResult = Vlee.string(temp).required('temp는 필수값 입니다.')
+      .is('3')
+      .values(['a', 'b', 'c'], 'temp는 a, b, c 중 하나의 값이여야합니다.')
+      .url()
+      .email()
+      .mobile()
+      .validate()
+      ;
+
+      if (validationResult.hasErrors) {
+        alert(validationResult.errors[0]);
+      }
+    </script>
+  </body>
+</html>

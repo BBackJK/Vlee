@@ -9,20 +9,26 @@
 
   // 외부 접근 인터페이스 정의
   const Vlee = {
-    string: function (value) {
-      return new VString(value);
+    string: function () {
+      return new VString();
     },
-    number: function (value) {
-      return new VNumber(value);
+    number: function () {
+      return new VNumber();
     },
-    array: function (value) {
-      return new VArray(value);
+    array: function () {
+      return new VArray();
     },
-    dateString: function (value) {
-      return new VDate(value);
+    dateString: function () {
+      return new VDate();
     },
-    object: function (value) {
-      return new VObject(value);
+    object: function ( schema ) {
+      return new VObject( schema );
+    },
+    when: function ( targetKey ) {
+      return new VWhen( targetKey );
+    },
+    then: function ( targetKey ) {
+      return new VThen( targetKey );
     }
   };
 
@@ -37,68 +43,151 @@
     LESS: 'LESS',
     BIGGER_EQUAL: 'BIGGER_EQUAL',
     LESS_EQUAL: 'LESS_EQUAL',
-    NOT_EMPTY: 'ARR_NOT_EMPTY',
+    NOT_EMPTY: 'NOT_EMPTY',
+    MIN_LENGTH: 'MIN_LENGTH',
+    MAX_LENGTH: 'MAX_LENGTH'
   };
 
   //#region 공통 prototype 정의
-  const VCommonType = function (value) {
-    this.value = value;
+  const VCommonType = function () {
     this.rules = [];
   };
 
-  // static method 정의
-  VCommonType.isVCommonType = function (value) {
-    return value instanceof VCommonType;
+  // VCommonType 인스턴스인지 확인하는 static method 정의
+  VCommonType.isVCommonType = function ( arg ) {
+    return arg instanceof VCommonType;
   };
 
-  VCommonType.prototype.addRule = function (vRule) {
-    this.rules.push(vRule);
+  /**
+   * rule 추가
+   */
+  VCommonType.prototype.addRule = function ( vRule ) {
+    if ( VRule.isVRule( vRule ) ) {
+      this.rules.push( vRule );
+    }
   };
 
-  VCommonType.prototype.bindValue = function (value) {
+  /**
+   * contextValue 주입
+   */
+  VCommonType.prototype.bindValue = function ( contextValue ) {
     this.rules.forEach(function ( rule ) {
-      if ( !VRule.isVRule(rule) ) return false;
-      rule.setContextValue(value);
+      if ( !VRule.isVRule( rule ) ) return false;
+      rule.setContextValue( contextValue );
     });
   };
   
-  VCommonType.prototype.required = function (message) {
-    const defaultMessage = '['.concat(this.value, '] is required');
-    this.addRule(VRule.of(RULES.REQUIRED, this.value, undefined, notStringMessageHandler(message, defaultMessage)));
+  /**
+   * 공통 required 룰 정의
+   */
+  VCommonType.prototype.required = function ( message ) {
+    const defaultMessage = '[{{ contextValue }}] is required.';
+    const vRuleInstance = VRule.of( RULES.REQUIRED, undefined, notStringMessageHandler( message, defaultMessage ) );
+    this.addRule( vRuleInstance );
     return this;
   };
 
-  VCommonType.prototype.pattern = function (pattern, message) {
-    const defaultMessage = '['.concat(this.value, '] is not match pattern.');
-    this.addRule(VRule.of(RULES.PATTERN, this.value, pattern, notStringMessageHandler(message, defaultMessage)));
+  /**
+   * 공통 커스텀 정규식과 일치하는지 적용
+   * @param {*} pattern 패턴 작성 ex) /\d/
+   */
+  VCommonType.prototype.pattern = function ( pattern, message ) {
+    if ( !isRegExp ( pattern ) ) throw new Error(' arg that first argument in pattern method is not RegExp. first arugment must be RegExp Type.');
+    const defaultMessage = '[{{ contextValue }}] is not match pattern.';
+    const vRuleInstance = VRule.of( RULES.PATTERN, pattern, notStringMessageHandler( message, defaultMessage ) );
+    this.addRule( vRuleInstance );
     return this;
   };
 
-  VCommonType.prototype.is = function (value, message) {
-    const defaultMessage = '['.concat(this.value, '] is not ', value);
-    this.addRule(VRule.of(RULES.IS, this.value, value, notStringMessageHandler(message, defaultMessage)));
+  /**
+   * 값이 같은지 체크
+   * @param {*} targetValue 비교할 대상 값
+   */
+  VCommonType.prototype.is = function ( targetValue, message ) {
+    const defaultMessage = '[{{ contextValue }}] is not ' + targetValue;
+    const vRuleInstance = VRule.of( RULES.IS, value, notStringMessageHandler( message, defaultMessage ) );
+    this.addRule( vRuleInstance );
     return this;
   };
 
-  VCommonType.prototype.validate = function () {
+  /**
+   * 값 정의 
+   * @param {*} contextValue 
+   */
+  VCommonType.prototype.validate = function ( contextValue ) {
     const vErrors = new VError();
+
+    let isTypeValid = false;
+    let typeInvalidMessage = '';
+
+    // 각 타입별로 비교할 타입이 아닌지 체크
+    if ( VString.isVstring( this ) ) {
+
+      isTypeValid = isNullOrUndefined( contextValue ) || isString( contextValue );
+      typeInvalidMessage = 'Input Context Value Type Must Be String Type Or Null. Cannot Compare Value.';
+
+    } else if ( VDate.isVDate( this ) ) {
+
+      isTypeValid = isNullOrUndefined( contextValue ) || isDateString( contextValue );
+      typeInvalidMessage = 'Input Context Value Is Not Convert Date. Cannot Compare Value.';
+
+    } else if ( VNumber.isVNumber( this ) ) {
+
+      isTypeValid = isNullOrUndefined( contextValue ) || isNumber( contextValue );
+      typeInvalidMessage = 'Input Value is Not Number Type Or Null. Cannot Compare Value.';
+
+    } else if ( VArray.isVArray( this ) ) {
+      
+      isTypeValid = isNullOrUndefined( contextValue ) || isArray( contextValue );
+      typeInvalidMessage = 'Input Value is Not Array Type Or Null. Cannot Compare Value.';
+
+    } else if ( VObject.isVObject( this ) ) {
+
+      isTypeValid = isObject( contextValue );
+      typeInvalidMessage = 'Input Value is Not Object Type. Cannot Compare Value.';
+
+    }
+
+    if ( !isTypeValid ) {
+      const vRuleInstance = VRule.of( RULES.TYPE_INVALID, contextValue, undefined, typeInvalidMessage );
+      this.rules.unshift( vRuleInstance );
+    }
+
+    if ( VObject.isVObject( this ) && isTypeValid ) {
+      const self = this;
+      Object.keys( self.schema ).forEach( function ( key ) {
+        if ( !contextValue.hasOwnProperty( key ) ) return false; // 유효성을 체크하려는 대상에게 해당 키가 존재하지 않으면 continue
+        const vCommonTypeInstance = self.schema[ key ];
+        if ( !VCommonType.isVCommonType( vCommonTypeInstance ) ) return false;  // schemaRule 이 공통 VCommonType을 확장한 함수의 인스턴스가 아니면 continue (외부 조작 방지)
+        const contextTargetValue = contextValue[ key ]; // 인자 객체의 키값
+        vCommonTypeInstance.bindValue( contextTargetValue );  // VRule contextValue에 값 바인딩
+        const _vErrors = vCommonTypeInstance.validate(); // 각 VRule 유효성 체크
+        if ( _vErrors.hasErrors ) vErrors.pushError( _vErrors.errors );
+      });
+    }
 
     this.rules.some(function ( rule ) {
       let condition = true;
       
       if ( !VRule.isVRule(rule) ) return false; // VRule이 아닌 rule (사용자가 임의로 넣은 rule) 에 대해서는 continue 처리로 skip
       if ( rule.hasTypeInvalid() ) condition = false;
+      
+      rule.setContextValue( contextValue );
 
       switch (rule['ruleType']) {
-        case RULES.REQUIRED: condition = requiredHandler(rule.contextValue); break;
-        case RULES.IS: condition = targetIsHandler(rule.contextValue, rule.targetValue); break;
-        case RULES.PATTERN: condition = isRegexHandler(rule.contextValue, rule.targetValue); break;
-        case RULES.NOT_EMPTY: condition = isNotEmptyHandler(rule.contextValue); break;
-        case RULES.ACCEPT_VALUES: condition = isIncludeHandler(rule.targetValue, rule.contextValue); break;
-        case RULES.BIGGER: condition = isBiggerThanHandler(rule.contextValue, rule.targetValue, false); break;
-        case RULES.BIGGER_EQUAL: condition = isBiggerThanHandler(rule.contextValue, rule.targetValue, true); break;
-        case RULES.LESS: condition = isLessThanHandler(rule.contextValue, rule.targetValue, false); break;
-        case RULES.LESS_EQUAL: condition = isLessThanHandler(rule.contextValue, rule.targetValue, true); break;
+
+        case RULES.REQUIRED: condition = requiredHandler( rule.contextValue ); break;
+        case RULES.IS: condition = targetIsHandler( rule.contextValue, rule.targetValue ); break;
+        case RULES.PATTERN: condition = isRegexHandler( rule.contextValue, rule.targetValue ); break;
+        case RULES.NOT_EMPTY: condition = isNotEmptyHandler( rule.contextValue ); break;
+        case RULES.ACCEPT_VALUES: condition = isIncludeHandler( rule.targetValue, rule.contextValue ); break;
+        case RULES.BIGGER: condition = isBiggerThanHandler( rule.contextValue, rule.targetValue, false ); break;
+        case RULES.BIGGER_EQUAL: condition = isBiggerThanHandler( rule.contextValue, rule.targetValue, true ); break;
+        case RULES.LESS: condition = isLessThanHandler( rule.contextValue, rule.targetValue, false ); break;
+        case RULES.LESS_EQUAL: condition = isLessThanHandler( rule.contextValue, rule.targetValue, true ); break;
+        case RULES.MAX_LENGTH: condition = isLessThanHandler( orElse( rule.contextValue, '' ).length, rule.targetValue, true ); break;
+        case RULES.MIN_LENGTH: condition = isBiggerThanHandler( orElse( rule.contextValue, '' ).length, rule.targetValue, true ); break;
+
       }
 
       if ( !condition ) vErrors.setError(rule.errorMessage, rule.contextValue);
@@ -110,23 +199,28 @@
   //#endregion
 
   //#region VString
-  const VString = function (value) {
-    this.constructor(value);
-    const isValid = isNullOrUndefined(value) || isString(value);
-    if (!isValid) this.addRule(VRule.of(RULES.TYPE_INVALID, value, null, 'Input Value is Not String Type Or Null. Cannot Compare Value.'));
+  const VString = function () {
+    this.constructor();
     return Object.freeze(this);
   };
 
-  VString.prototype = Object.create(VCommonType.prototype); // prototype 상속
+  // VString instance check
+  VString.isVstring = function ( arg ) {
+    return arg instanceof VString;
+  };
+
+  // prototype 상속
+  VString.prototype = Object.create(VCommonType.prototype);
 
   /**
    * 허용가능한 값 정의
    * @param {*} availableValueArray 허용 가능한 값을 배열상태로 정의. 예: ['a', 'b', 'c']
    */
-  VString.prototype.values = function (availableValueArray, message) {
-    const valuesMessage = Array.isArray(availableValueArray) ? availableValueArray.join(', ') : availableValueArray;
-    const defaultMessage = '['.concat(this.value, '] is only available in [', valuesMessage, ']');
-    this.addRule(VRule.of(RULES.ACCEPT_VALUES, this.value, availableValueArray, notStringMessageHandler(message, defaultMessage)));
+  VString.prototype.values = function ( availableValueArray, message ) {
+    const valuesMessage = isArray( availableValueArray ) ? availableValueArray.join(', ') : availableValueArray;
+    const defaultMessage = '[{{ contextValue }}] is only available in ['.concat( valuesMessage, '].');
+    const vRuleInstance = VRule.of( RULES.ACCEPT_VALUES, availableValueArray, notStringMessageHandler( message, defaultMessage ) );
+    this.addRule( vRuleInstance );
     return this;
   };
 
@@ -134,10 +228,10 @@
    * 문자열 최소길이 제한
    * @param {*} minLength 
    */
-  VString.prototype.minLength = function (minLength, message) {
-    const defaultMessage = '['.concat(this.value, '] length must exceed ', minLength);
-    const _value = orElse(this.value, '');
-    this.addRule(VRule.of(RULES.BIGGER, _value.length, minLength), notStringMessageHandler(message, defaultMessage));
+  VString.prototype.min = function ( minLength, message ) {
+    const defaultMessage = '[{{ contextValue }}] length must exceed ' + minLength + '.';
+    const vRuleInstance = VRule.of( RULES.MIN_LENGTH, minLength, notStringMessageHandler( message, defaultMessage ) );
+    this.addRule( vRuleInstance );
     return this;
   };
 
@@ -145,156 +239,172 @@
    * 문자열 최대길이 제한
    * @param {number} maxLength 
    */
-  VString.prototype.maxLength = function (maxLength, message) {
-    const defaultMessage = '['.concat(this.value, '] length must not exceed ', maxLength);
-    const _value = orElse(this.value, '');
-    this.addRule(VRule.of(RULES.LESS, _value.length, maxLength), notStringMessageHandler(message, defaultMessage));
+  VString.prototype.max = function ( maxLength, message ) {
+    const defaultMessage = '[{{ contextValue }}] must not exceed ' + maxLength + '.';
+    const vRuleInstance = VRule.of( RULES.MAX_LENGTH, maxLength, notStringMessageHandler( message, defaultMessage ) );
+    this.addRule( vRuleInstance );
     return this;
   };
 
   /**
    * 공백이 포함되어있는지 확인한다.
    */
-  VString.prototype.notBlank = function (message) {
-    const pattern = /\s/;
-    const defaultMessage = '['.concat(this.value, '] is include white space.');
-    this.addRule(VRule.of(RULES.PATTERN, this.value, pattern, notStringMessageHandler(message, defaultMessage)));
+  VString.prototype.blank = function ( message ) {
+    const pattern = /^\S\S*\S$/;
+    const defaultMessage = '[{{ contextValue }}] is include white space.';
+    const vRuleInstance = VRule.of( RULES.PATTERN, pattern, notStringMessageHandler( message, defaultMessage ) );
+    this.addRule( vRuleInstance );
     return this;
   };
 
   /**
    * '' 값인지 확인한다.
    */
-  VString.prototype.notEmpty = function (message) {
-    const defaultMessage = '['.concat( this.value, '] is empty.');
-    this.addRule(VRule.of(RULES.NOT_EMPTY, this.value, undefined, notStringMessageHandler(message, defaultMessage)));
+  VString.prototype.empty = function ( message ) {
+    const defaultMessage = '[{{ contextValue }}] is empty.';
+    const vRuleInstance = VRule.of( RULES.NOT_EMPTY, undefined, notStringMessageHandler( message, defaultMessage ) );
+    this.addRule( vRuleInstance );
     return this;
   };
 
   /**
    * 이메일 형식인지 확인한다.
    */
-  VString.prototype.email = function (message) {
+  VString.prototype.email = function ( message ) {
     const pattern = /^[0-9a-zA-Z]([-_\.]?[0-9a-zA-Z])*@[0-9a-zA-Z]([-_\.]?[0-9a-zA-Z])*\.[a-zA-Z]{2,3}$/;
-    const defaultMessage = '['.concat(this.value, '] is not email.');
-    this.addRule(VRule.of(RULES.PATTERN, this.value, pattern, notStringMessageHandler(message, defaultMessage)));
+    const defaultMessage = '[{{ contextValue }}] is not email.';
+    const vRuleInstance = VRule.of( RULES.PATTERN, pattern, notStringMessageHandler( message, defaultMessage ) );
+    this.addRule( vRuleInstance );
     return this;
   };
 
   /**
    * URL 형식인지 확인한다.
    */
-  VString.prototype.url = function (message) {
+  VString.prototype.url = function ( message ) {
     const pattern = /^http[s]?:\/\/([\S]{3,})/;
-    const defaultMessage = '['.concat(this.value, '] is not url.');
-    this.addRule(VRule.of(RULES.PATTERN, this.value, pattern, notStringMessageHandler(message, defaultMessage)));
+    const defaultMessage = '[{{ contextValue }}] is not url.';
+    const vRuleInstance = VRule.of( RULES.PATTERN, pattern, notStringMessageHandler( message, defaultMessage ) );
+    this.addRule( vRuleInstance );
     return this;
   };
 
   /**
    * 휴대폰 형식인지 확인한다.
    */
-  VString.prototype.mobile = function (message) {
+  VString.prototype.mobile = function ( message ) {
     const pattern = /^01([0|1|6|7|8|9])-?([0-9]{3,4})-?([0-9]{4})$/;
-    const defaultMessage = '['.concat(this.value, '] is not mobile.');
-    this.addRule(VRule.of(RULES.PATTERN, this.value, pattern, notStringMessageHandler(message, defaultMessage)));
+    const defaultMessage = '[{{ contextValue }}] is not mobile.';
+    const vRuleInstance = VRule.of( RULES.PATTERN, pattern, notStringMessageHandler( message, defaultMessage ) );
+    this.addRule( vRuleInstance );
     return this;
   };
 
   /**
    * 숫자로만 이루어져있는지 확인한다.
    */
-  VString.prototype.onlyNumber = function (message) {
-    const pattern = /\d$/;
-    const defaultMessage = '['.concat(this.value, '] is accept only number.');
-    this.addRule(VRule.of(RULES.PATTERN, this.value, pattern, notStringMessageHandler(message, defaultMessage)));
+  VString.prototype.onlyNumber = function ( message ) {
+    const pattern = /^\d\d*\d$/;
+    const defaultMessage = '[{{ contextValue }}] is accept only number.';
+    const vRuleInstance = VRule.of( RULES.PATTERN, pattern, notStringMessageHandler(message, defaultMessage ) );
+    this.addRule( vRuleInstance );
     return this; 
   };
 
   /**
    * 화폐형식인지 확인한다.
    */
-  VString.prototype.money = function (message) {
+  VString.prototype.money = function ( message ) {
     const pattern = /^[1-9]\d{0,3}(,\d{0,3})*$/;
-    const defaultMessage = '['.concat(this.value, '] is not money.');
-    this.addRule(VRule.of(RULES.PATTERN, this.value, pattern, notStringMessageHandler(message, defaultMessage)));
+    const defaultMessage = '[{{ contextValue }}] is not money.';
+    const vRuleInstance = VRule.of( RULES.PATTERN, pattern, notStringMessageHandler( message, defaultMessage ) );
+    this.addRule( vRuleInstance );
     return this;
   };
 
   /**
    * 숫자(소수점 허용)인지 확인한다.
    */
-  VString.prototype.numeric = function (message) {
-    const pattern = /^([1-9]{1,}|0?)[\.]?(\d){1,}$/;
-    const defaultMessage = '['.concat(this.value, '] is not numeric.');
-    this.addRule(VRule.of(RULES.PATTERN, this.value, pattern, notStringMessageHandler(message, defaultMessage)));
+  VString.prototype.numeric = function ( message ) {
+    const pattern = /^(0|[1-9]\d*)(\.\d*[1-9]$|\d$)/; // 0 혹은 0 이 아닌 숫자로 시작하고 중간에 숫자 여러개가 있고 콤마가 있는 경우 0으로 끝나서는 안되고 콤마가 없을 경우는 어떤 숫자로 끝나는 것을 허용.
+    const defaultMessage = '[{{ contextValue }}] is not numeric.';
+    const vRuleInstance = VRule.of( RULES.PATTERN, pattern, notStringMessageHandler( message, defaultMessage ) );
+    this.addRule( vRuleInstance );
     return this;
   };
 
   /**
    * 소문자로만 이루어져있는지 확인한다.
    */
-  VString.prototype.lower = function (message) {
-    const pattern = /[a-z]/;
-    const defaultMessage = '['.concat(this.value, '] is not lower.');
-    this.addRule(VRule.of(RULES.PATTERN, this.value, pattern, notStringMessageHandler(message, defaultMessage)));
+  VString.prototype.lower = function ( message ) {
+    const pattern = /^[a-z][a-z]*[a-z]$/;
+    const defaultMessage = '[{{ contextValue }}] is not lower.';
+    const vRuleInstance = VRule.of( RULES.PATTERN, pattern, notStringMessageHandler( message, defaultMessage ) );
+    this.addRule( vRuleInstance );
     return this;
   };
 
   /**
    * 대문자로만 이루어져있는지 확인한다.
    */
-  VString.prototype.upper = function (message) {
-    const pattern = /[A-Z]/;
-    const defaultMessage = '['.concat(this.value, '] is not upper.');
-    this.addRule(VRule.of(RULES.PATTERN, this.value, pattern, notStringMessageHandler(message, defaultMessage)));
+  VString.prototype.upper = function ( message ) {
+    const pattern = /^[A-Z][A-Z]*[A-Z]$/;
+    const defaultMessage = '[{{ contextValue }}] is not upper.';
+    const vRuleInstance = VRule.of( RULES.PATTERN, pattern, notStringMessageHandler( message, defaultMessage ) );
+    this.addRule( vRuleInstance );
     return this;
   };
   //#endregion
 
   //#region VDate
-  const VDate = function (value) {
-    this.constructor(value);
-    const isValid = isNullOrUndefined(value) || isDateString(value);
-    if (!isValid) {
-      const isNotValidMessage = 'Input Value ['.concat(value, '] is Not Convert Date Value. Cannot Compare Value.');
-      this.addRule(VRule.of(RULES.TYPE_INVALID, value, null, isNotValidMessage));
-    }
+  const VDate = function () {
+    this.constructor();
     return Object.freeze(this);
   };
-  VDate.prototype = Object.create(VCommonType.prototype); // prototype 상속
+
+  // VDate instance check
+  VDate.isVDate = function ( arg ) {
+    return arg instanceof VDate;
+  };
+
+  // prototype 상속
+  VDate.prototype = Object.create(VCommonType.prototype);
 
   /**
    * 년월일 형식인지
    */
-  VDate.prototype.date = function (message) {
+  VDate.prototype.date = function ( message ) {
     const pattern = /^\d{4}[-\.\/](0?\d|1[012])[-\.\/](0?[1-9]{1}|[12]\d|3[01])$/;
-    const defaultMessage = '['.concat(this.value, '] is not date type.');
-    this.addRule(VRule.of(RULES.PATTERN, this.value, pattern, notStringMessageHandler(message, defaultMessage)));
+    const defaultMessage = '[{{ contextValue }}] is not date type.';
+    const vRuleInstance = VRule.of( RULES.PATTERN, pattern, notStringMessageHandler( message, defaultMessage ) );
+    this.addRule( vRuleInstance );
     return this;
   };
 
   /**
    * 년월일 시분 형식인지
    */
-  VDate.prototype.datetime = function (message) {
+  VDate.prototype.datetime = function ( message ) {
     const pattern = /^\d{4}[-\.\/](0?\d|1[012])[-\.\/](0?\d|[12]\d|3[01])\s(0\d|1\d|2[0-3])(:[0-5][0-9]){1,2}/;
-    const defaultMessage = '['.concat(this.value, '] is not date time type.');
-    this.addRule(RULES.PATTERN, this.value, pattern, notStringMessageHandler(message, defaultMessage));
+    const defaultMessage = '[{{ contextValue }}] is not date time type.';
+    const vRuleInstance = VRule.of( RULES.PATTERN, pattern, notStringMessageHandler( message, defaultMessage ) );
+    this.addRule( vRuleInstance );
     return this;
   };
 
   /**
    * 비교할 대상보다 미래인지
    */
-  VDate.prototype.after = function (targetValue, message) {
-    const isValid = isDateString(targetValue);
+  VDate.prototype.after = function ( targetValue, message ) {
+    const isValid = !isNullOrUndefined( targetValue ) || isDateString( targetValue );
     if (!isValid) {
-      const isNotValidMessage = 'Target Value ['.concat(targetValue, '] is Not Convert Date Value. Cannot Compare Value.');
-      this.addRule(VRule.of(RULES.TYPE_INVALID, this.value, targetValue, isNotValidMessage));
+      const isNotValidMessage = 'Target Value ['.concat( targetValue, '] is Not Convert Date Value. Cannot Compare Value.' );
+      const vRuleInstance = VRule.of( RULES.TYPE_INVALID, targetValue, isNotValidMessage );
+      this.addRule( vRuleInstance );
     } else {
-      const defaultMessage = '['.concat(this.value, '] is not after [', targetValue,'].');
-      this.addRule(VRule.of(RULES.BIGGER, new Date(this.value).getTime(), new Date(targetValue).getTime(), notStringMessageHandler(message, defaultMessage)));
+      const defaultMessage = '[{{ contextValue }}] is not after [' + targetValue + ']';
+      const vRuleInstance = VRule.of(RULES.BIGGER, targetValue, notStringMessageHandler( message, defaultMessage ) )
+      this.addRule( vRuleInstance );
     }
     return this;
   };
@@ -302,14 +412,16 @@
   /**
    * 비교할 대상보다 같거나 미래인지
    */
-  VDate.prototype.equalAfter = function (targetValue, message) {
-    const isValid = isDateString(targetValue);
+  VDate.prototype.equalAfter = function ( targetValue, message ) {
+    const isValid = !isNullOrUndefined( targetValue ) || isDateString( targetValue );
     if (!isValid) {
-      const isNotValidMessage = 'Target Value ['.concat(targetValue, '] is Not Convert Date Value. Cannot Compare Value.');
-      this.addRule(VRule.of(RULES.TYPE_INVALID, this.value, targetValue, isNotValidMessage));
+      const isNotValidMessage = 'Target Value ['.concat( targetValue, '] is Not Convert Date Value. Cannot Compare Value.' );
+      const vRuleInstance = VRule.of( RULES.TYPE_INVALID, targetValue, isNotValidMessage );
+      this.addRule( vRuleInstance );
     } else {
-      const defaultMessage = '['.concat(this.value, '] is not equal to or after [', targetValue,'].');
-      this.addRule(VRule.of(RULES.BIGGER_EQUAL, new Date(this.value).getTime(), new Date(targetValue).getTime(), notStringMessageHandler(message, defaultMessage)));
+      const defaultMessage = '[{{ contextValue }}] is not equal to or after [' + targetValue + ']';
+      const vRuleInstance = VRule.of( RULES.BIGGER_EQUAL, targetValue, notStringMessageHandler( message, defaultMessage ) );
+      this.addRule( vRuleInstance );
     }
     return this;
   };
@@ -317,14 +429,16 @@
   /**
    * 비교할 대상보다 과거인지
    */
-  VDate.prototype.before = function (targetValue, message) {
-    const isValid = isDateString(targetValue);
+  VDate.prototype.before = function ( targetValue, message ) {
+    const isValid = !isNullOrUndefined( targetValue ) || isDateString( targetValue );
     if (!isValid) {
-      const isNotValidMessage = 'Target Value ['.concat(targetValue, '] is Not Convert Date Value. Cannot Compare Value.');
-      this.addRule(VRule.of(RULES.TYPE_INVALID, this.value, targetValue, isNotValidMessage));
+      const isNotValidMessage = 'Target Value ['.concat( targetValue, '] is Not Convert Date Value. Cannot Compare Value.' );
+      const vRuleInstance = VRule.of( RULES.TYPE_INVALID, targetValue, isNotValidMessage );
+      this.addRule( vRuleInstance );
     } else {
-      const defaultMessage = '['.concat(this.value, '] is not before [', targetValue,'].');
-      this.addRule(VRule.of(RULES.LESS, new Date(this.value).getTime(), new Date(targetValue).getTime(), notStringMessageHandler(message, defaultMessage)));
+      const defaultMessage = '[{{ contextValue }}] is not before [' + targetValue + ']';
+      const vRuleInstance = VRule.of( RULES.LESS, targetValue, notStringMessageHandler( message, defaultMessage ) );
+      this.addRule( vRuleInstance );
     }
     return this;
   };
@@ -333,106 +447,183 @@
    * 비교할 대상보다 같거나 과거인지
    */
   VDate.prototype.equalBefore = function (targetValue, message) {
-    const isValid = isDateString(targetValue);
+    const isValid = !isNullOrUndefined( targetValue ) || isDateString( targetValue );
     if (!isValid) {
-      const isNotValidMessage = 'Target Value ['.concat(targetValue, '] is Not Convert Date Value. Cannot Compare Value.');
-      this.addRule(VRule.of(RULES.TYPE_INVALID, this.value, targetValue, isNotValidMessage));
+      const isNotValidMessage = 'Target Value ['.concat( targetValue, '] is Not Convert Date Value. Cannot Compare Value.' );
+      const vRuleInstance = VRule.of( RULES.TYPE_INVALID, targetValue, isNotValidMessage );
+      this.addRule( vRuleInstance );
     } else {
-      const defaultMessage = '['.concat(this.value, '] is not equal to or before [', targetValue,'].');
-      this.addRule(VRule.of(RULES.LESS_EQUAL, new Date(this.value).getTime(), new Date(targetValue).getTime(), notStringMessageHandler(message, defaultMessage)));
+      const defaultMessage = '[{{ contextValue }}] is not before [' + targetValue + ']';
+      const vRuleInstance = VRule.of( RULES.LESS_EQUAL, targetValue, notStringMessageHandler( message, defaultMessage ) );
+      this.addRule( vRuleInstance );
     }
     return this;
   };
   //#endregion
 
   //#region VNumber
-  const VNumber = function (value) {
-    this.constructor(value);
-    const isValid = isNullOrUndefined(value) || isNumber(value);
-    if (!isValid) this.addRule(VRule.of(RULES.TYPE_INVALID, value, null, 'Input Value is Not Number Type Or Null. Cannot Compare Value.'));
+  const VNumber = function () {
+    this.constructor();
     return Object.freeze(this);
   };
-  VNumber.prototype = Object.create(VCommonType.prototype); // prototype 상속
 
-  VNumber.prototype.values = function (availableValueArray, message) {
-    const valuesMessage = isArray(availableValueArray) ? availableValueArray.join(', ') : availableValueArray;
-    const defaultMessage = '['.concat( this.value, '] is only available in [', valuesMessage, '].' );
-    this.addRule(VRule.of(RULES.ACCEPT_VALUES, this.value, availableValueArray, notStringMessageHandler(message, defaultMessage)));
+  // vnumber instance check
+  VNumber.isVNumber = function ( arg ) {
+    return arg instanceof VNumber;
+  };
+
+  // prototype 상속
+  VNumber.prototype = Object.create( VCommonType.prototype );
+
+  /**
+   * 허용가능한 값 정의
+   * @param {*} availableValueArray 허용 가능한 값을 배열상태로 정의. 예: [1, 2, 3]
+   */
+  VNumber.prototype.values = function ( availableValueArray, message ) {
+    const valuesMessage = isArray( availableValueArray ) ? availableValueArray.join(', ') : availableValueArray;
+    const defaultMessage = '[{{ contextValue }}] is only available in ['.concat( valuesMessage, '].');
+    const vRuleInstance = VRule.of( RULES.ACCEPT_VALUES, availableValueArray, notStringMessageHandler( message, defaultMessage ) );
+    this.addRule( vRuleInstance );
     return this;
   };
 
-  VNumber.prototype.bigger = function (targetValue, message) {
-    const defaultMessage = '['.concat( this.value, '] is not bigger than [', targetValue, '].');
-    this.addRule(VRule.of(RULES.BIGGER, this.value, targetValue, notStringMessageHandler(message, defaultMessage)));
+  /**
+   * 비교대상값보다 큰 값인지 체크.
+   */
+  VNumber.prototype.bigger = function ( targetValue, message ) {
+    const defaultMessage = '[{{ contextValue }}] is not bigger than [' + targetValue + '].';
+    const vRuleInstance = VRule.of( RULES.BIGGER, targetValue, notStringMessageHandler( message, defaultMessage ) );
+    this.addRule( vRuleInstance );
     return this;
   };
 
-  VNumber.prototype.biggerEquals = function (targetValue, message) {
-    const defaultMessage = '['.concat( this.value, '] is not bigger than or equal to [', targetValue, '].');
-    this.addRule(VRule.of(RULES.BIGGER_EQUAL, this.value, targetValue, notStringMessageHandler(message, defaultMessage)));
+  /**
+   * 비교대상값보다 큰 값이거나 같은지 체크.
+   */
+  VNumber.prototype.biggerEquals = function ( targetValue, message ) {
+    const defaultMessage = '[{{ contextValue }}] is not bigger than or equal to [' + targetValue + '].';
+    const vRuleInstance = VRule.of( RULES.BIGGER_EQUAL, targetValue, notStringMessageHandler( message, defaultMessage ) );
+    this.addRule( vRuleInstance );
     return this;
   };
 
-  VNumber.prototype.less = function (targetValue, message) {
-    const defaultMessage = '['.concat( this.value, '] is not less than [', targetValue, '].');
-    this.addRule(VRule.of(RULES.LESS, this.value, targetValue, notStringMessageHandler(message, defaultMessage)));
+  /**
+   * 비교대상보다 작은 값인지
+   */
+  VNumber.prototype.less = function ( targetValue, message ) {
+    const defaultMessage = '[{{ contextValue }}] is not less than [' + targetValue + '].';
+    const vRuleInstance = VRule.of( RULES.LESS, targetValue, notStringMessageHandler( message, defaultMessage ) );
+    this.addRule( vRuleInstance );
     return this;
   };
 
-  VNumber.prototype.lessEquals = function (targetValue, message) {
-    const defaultMessage = '['.concat( this.value, '] is not less than or equal to [', targetValue, '].');
-    this.addRule(VRule.of(RULES.LESS_EQUAL, this.value, targetValue, notStringMessageHandler(message, defaultMessage)));
+  /**
+   * 비교대상보다 작은 값이거나 같은지 체크.
+   */
+  VNumber.prototype.lessEquals = function ( targetValue, message ) {
+    const defaultMessage = '[{{ contextValue }}] is not less than or equal to [' + targetValue + '].';
+    const vRuleInstance = VRule.of( RULES.LESS_EQUAL, targetValue, notStringMessageHandler( message, defaultMessage ) );
+    this.addRule( vRuleInstance );
     return this;
   };
   //#endregion
 
   //#region VArray
-  const VArray = function (value) {
-    this.constructor(value);
-    const isValid = isNullOrUndefined(value) || isArray(value);
-    if ( !isValid ) this.addRule(VRule.of(RULES.TYPE_INVALID, value, null, 'Input Value is Not Array Type Or Null. Cannot Compare Value.'));
+  const VArray = function () {
+    this.constructor();
     return Object.freeze(this);
   };
-  VArray.prototype = Object.create(VCommonType.prototype); // prototype 상속
 
-  VArray.prototype.notEmpty = function (message) {
-    const defaultMessage = '['.concat( this.value, '] is empty.');
-    this.addRule(VRule.of(RULES.NOT_EMPTY, this.value, undefined, notStringMessageHandler(message, defaultMessage)));
+  // VArray instance check
+  VArray.isVArray = function ( arg ) {
+    return arg instanceof VArray;
+  };
+
+  // prototype 상속
+  VArray.prototype = Object.create(VCommonType.prototype);
+
+  /**
+   * 배열이 비어있는지 확인.
+   */
+  VArray.prototype.empty = function (message) {
+    const defaultMessage = '[{{ contextValue }}] is empty.';
+    const vRuleInstance = VRule.of( RULES.NOT_EMPTY, undefined, notStringMessageHandler( message, defaultMessage ) );
+    this.addRule( vRuleInstance );
     return this;
   };
   //#endregion
 
   //#region VObject
-  const VObject = function (objectSchema) {
-    if ( !isObject(objectSchema) ) throw new Error('argument is not object type.');
+  const VObject = function ( objectSchema ) {
+    if ( !isObject( objectSchema ) ) throw new Error(' argument is not object type. ');
+    this.constructor();
     this.schema = objectSchema;
     return Object.freeze(this);
   };
 
-  VObject.prototype.validate = function (target) {
-    if ( !isObject(target) ) {
-      console.error('target type is not object.');
-      return null;
-    }
-    const self = this;
-    const totalVErrors = new VError();
-    Object.keys(self.schema).forEach(function (key) {
-      if ( !target.hasOwnProperty(key) ) return false;  // 유효성을 체크하려는 대상에게 해당 키가 존재하지 않으면 continue
-      const schemaRule = self.schema[key];
-      if ( !VCommonType.isVCommonType(schemaRule) ) return false; // schemaRule 이 공통 VCommonType을 확장한 함수의 인스턴스가 아니면 continue (외부 조작 방지)
-      const targetValue = target[key]; // 대상 키의 값
-      schemaRule.bindValue(targetValue);  // VRule의 contextValue에 값 바인딩
-      const vErrors = schemaRule.validate();  // 각 VRule 유효성 체크
-      if (vErrors.hasErrors) totalVErrors.pushError(vErrors.errors); // VRule이 에러를 가질 시만 
-    });
-    return totalVErrors;
+  // VObject instance check
+  VObject.isVObject = function ( arg ) {
+    return arg instanceof VObject;
+  };
+
+  // prototype 상속
+  VObject.prototype = Object.create( VCommonType.prototype );
+
+  /**
+   * When Then Else 를 쓸 수 있는 파이프 제공
+   */
+  VObject.prototype.pipe = function ( vWhen, vThen, vElse ) {
+
+    console.log( vWhen );
+    console.log( vThen );
+    console.log( vElse );
+
+    return this;
   };
   //#endregion
 
+  //#region VWhen
+  const VWhen = function ( targetKey ) {
+    this.targetKey = targetKey;
+    this.rules = [];
+    return Object.freeze(this);
+  };
+
+  // VWhen instance check
+  VWhen.isVWhen = function ( arg ) {
+    return arg instanceof VWhen;
+  };
+
+  VWhen.prototype.is = function ( checkValue ) {
+    const vRuleInstance = VRule.of( RULES.IS, checkValue, undefined );
+    this.rules.push( vRuleInstance );
+    return this;
+  };
+  //#endregion VWhen
+
+  //#region VThen
+  const VThen = function ( targetKey ) {
+    this.targetKey = targetKey;
+    this.rules = [];
+    return Object.freeze(this);
+  }
+
+  // VThen instance check
+  VThen.isVThen = function ( arg ) {
+    return arg instanceof VThen;
+  };
+
+  VThen.prototype.after = function ( checkValue, message ) {
+    const defaultMessage = '[ '.concat( this.targetKey, ' ] is not after ' + checkValue );
+    const vRuleInstance = VRule.of( RULES.BIGGER, checkValue, notStringMessageHandler( message, defaultMessage ) );
+    this.rules.push( vRuleInstance );
+    return this;
+  };
+
   //#region VRule 규칙 정의 객체
-  const VRule = function (ruleType, contextValue, targetValue, errorMessage) {
+  const VRule = function ( ruleType, targetValue, errorMessage ) {
     this.ruleType = ruleType;
-    this.contextValue = contextValue;
+    this.contextValue = undefined;
     this.targetValue = targetValue;
     this.errorMessage = errorMessage;
     return this;
@@ -441,14 +632,14 @@
   /**
    * 인스턴스 생성 static method
    */
-  VRule.of = function (ruleType, contextValue, targetValue, errorMessage) {
-    return new VRule(ruleType, contextValue, targetValue, errorMessage);
+  VRule.of = function ( ruleType, targetValue, errorMessage ) {
+    return new VRule( ruleType, targetValue, errorMessage );
   };
   
   /**
    * 자신의 instance 인지 확인 
    */
-  VRule.isVRule = function (target) {
+  VRule.isVRule = function ( target ) {
     return target instanceof VRule;
   };
 
@@ -460,10 +651,12 @@
   };
 
   /**
-   * contextValue 설정
+   * contextValue 설정 및 메세지 변경
    */
-  VRule.prototype.setContextValue = function (value) {
-    this.contextValue = value;
+  VRule.prototype.setContextValue = function ( contextValue ) {
+    this.contextValue = contextValue;
+    const messageContextValue = contextValue === '' ? '(empty string)' : contextValue === [] ? '(empty array)' : contextValue;
+    this.errorMessage = this.errorMessage.replace(/\{\{ contextValue \}\}/, messageContextValue);
   };
   //#endregion
 
@@ -493,7 +686,6 @@
   };
 
   VErrorMessage.isVErrorMessage = function (value) {
-    console.log(value instanceof VErrorMessage);
     return value instanceof VErrorMessage;
   };
 
@@ -531,6 +723,10 @@
   const isDateString = function (val) {
     const date = new Date(val);
     return objectToStringCall(date) === '[object Date]' && !isNaN(date) && !isNullOrUndefined(val);
+  };
+
+  const isRegExp = function ( val ) {
+    return val instanceof RegExp;
   };
 
   const objectToStringCall = function (val) {
@@ -571,14 +767,17 @@
     return isIncludeEqual ? _source >= _target : _source > _target;
   };
 
-  const isLessThanHandler = function (source, target, isIncludeEqual) {
+  const isLessThanHandler = function ( source, target, isIncludeEqual ) {
     const _source = orElse(source, 0);
     const _target = orElse(target, 0);
     return isIncludeEqual ? _source <= _target : _source < _target;
   };
 
-  const isRegexHandler = function (source, pattern) {
-    return pattern.test(source) && !isNullOrUndefined(source);
+  const isRegexHandler = function (source, pattern, isNotMatch) {
+    return !isNullOrUndefined(source) &&
+      (
+        isNotMatch ? !pattern.test(source) : pattern.test(source)
+      );
   };
   //#endregion
 

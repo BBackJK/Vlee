@@ -5,50 +5,7 @@
   </head>
   <body>
     <script>
-      const testString = '1';
-      const vleeStringResult = Vlee.string(testString)
-              .required('testString 값은 필수값입니다.')
-              .values(['1', '2', '3'], 'testString 값은 1, 2, 3 중 하나의 값이여야 합니다.')
-              .mobile('testString 값이 모바일 형식이 아닙니다.')
-              .url('testString 값이 url 형식이 아닙니다.')
-              .validate();
-      
-      if (vleeStringResult.hasErrors) {
-        /**
-         * alert :: 'testString 값이 모바일 형식이 아닙니다.'
-         * alert :: 'testString 값이 url 형식이 아닙니다.'
-         */
-        alert(vleeStringResult.errors[0]);
-      }
-
-      const testNumber = 100;
-      const vleeNumberResult = Vlee.number(testNumber)
-              .required()
-              .bigger(10, 'testNumber는 10보다 커야합니다.')
-              .less(90, 'testNumber는 90보다 작아야 합니다.')
-              .validate();
-      
-      if (vleeNumberResult.hasErrors) {
-        /**
-         * alert :: 'testNumber는 90보다 작아야 합니다.'
-         */
-        alert(vleeNumberResult.errors[0]);
-      }
-
-      const testDateString = '2022-10-26';
-      const vleeDateStringResult = Vlee.dateString(testDateString)
-            .required()
-            .date()
-            .after('2022-11-01', 'testDateString은 2022-11-01 보다 커야합니다.')
-            .validate();
-
-      if ( vleeDateStringResult.hasErrors ) {
-        /**
-         * alert :: 'testDateString은 2022-11-01 보다 커야합니다.'
-         */
-        alert(vleeDateStringResult.errors[0]);
-      }
-      
+      const IS_TEST = false;
 
       const target5 = {
         genderCode: 1,
@@ -60,19 +17,89 @@
       const validationResult5 = Vlee.object({
         genderCode: Vlee.number().values([1, 2], '성별은 남(1) 혹은 여(2)만 가능합니다. ').required(),
         phone: Vlee.string().mobile('휴대폰 형식이 올바르지 않습니다.').required('휴대폰 입력은 필수값 입니다.'),
-        selectIdList: Vlee.array().notEmpty('고객을 선택해주세요.'),
+        selectIdList: Vlee.array().empty('고객을 선택해주세요.'),
         startDate: Vlee.dateString().date().required(),
         endDate: Vlee.dateString().date().required()
-      }).validate(target5);
+      })
+      .pipe(
+        Vlee.when('genderCode').is(1)
+      , Vlee.then('startDate').after('2022-11-01', '성별이 남자일 때 시작 일자는 2022-11-01 이후이여야 합니다.')
+        
+      )
+      .validate(target5);
+
+      console.log( validationResult5 );
       
-      if (validationResult5.hasErrors) {
-        /**
-         * alert :: '성별은 남(1) 혹은 여(2)만 가능합니다. '
-         * alert :: '휴대폰 형식이 올바르지 않습니다.'
-         * alert :: '고객을 선택해주세요.'
-         */ 
-        alert(validationResult5.errors[0]);
-      }
+      // throw Error('임시');
+
+      // const testString = '1';
+      // const vleeStringResult = Vlee.string(testString)
+      //         .required('testString 값은 필수값입니다.')
+      //         .values(['1', '2', '3'], 'testString 값은 1, 2, 3 중 하나의 값이여야 합니다.')
+      //         .mobile('testString 값이 모바일 형식이 아닙니다.')
+      //         .url('testString 값이 url 형식이 아닙니다.')
+      //         .validate();
+      
+      // if (vleeStringResult.hasErrors && IS_TEST) {
+      //   /**
+      //    * alert :: 'testString 값이 모바일 형식이 아닙니다.'
+      //    * alert :: 'testString 값이 url 형식이 아닙니다.'
+      //    */
+      //   alert(vleeStringResult.errors[0]);
+      // }
+
+      // const testNumber = 100;
+      // const vleeNumberResult = Vlee.number(testNumber)
+      //         .required()
+      //         .bigger(10, 'testNumber는 10보다 커야합니다.')
+      //         .less(90, 'testNumber는 90보다 작아야 합니다.')
+      //         .validate();
+      
+      // if (vleeNumberResult.hasErrors && IS_TEST) {
+      //   /**
+      //    * alert :: 'testNumber는 90보다 작아야 합니다.'
+      //    */
+      //   alert(vleeNumberResult.errors[0]);
+      // }
+
+      // const testDateString = '2022-10-26';
+      // const vleeDateStringResult = Vlee.dateString(testDateString)
+      //       .required()
+      //       .date()
+      //       .after('2022-11-01', 'testDateString은 2022-11-01 보다 커야합니다.')
+      //       .validate();
+
+      // if ( vleeDateStringResult.hasErrors && IS_TEST ) {
+      //   /**
+      //    * alert :: 'testDateString은 2022-11-01 보다 커야합니다.'
+      //    */
+      //   alert(vleeDateStringResult.errors[0]);
+      // }
+      
+
+      // const target5 = {
+      //   genderCode: 1,
+      //   phone: '010123412',
+      //   selectIdList: [],
+      //   startDate: '2022-10-25',
+      //   endDate: '2022-10-'
+      // };
+      // const validationResult5 = Vlee.object({
+      //   genderCode: Vlee.number().values([1, 2], '성별은 남(1) 혹은 여(2)만 가능합니다. ').required(),
+      //   phone: Vlee.string().mobile('휴대폰 형식이 올바르지 않습니다.').required('휴대폰 입력은 필수값 입니다.'),
+      //   selectIdList: Vlee.array().empty('고객을 선택해주세요.'),
+      //   startDate: Vlee.dateString().date().required(),
+      //   endDate: Vlee.dateString().date().required()
+      // }).validate(target5);
+      
+      // if (validationResult5.hasErrors && IS_TEST) {
+      //   /**
+      //    * alert :: '성별은 남(1) 혹은 여(2)만 가능합니다. '
+      //    * alert :: '휴대폰 형식이 올바르지 않습니다.'
+      //    * alert :: '고객을 선택해주세요.'
+      //    */ 
+      //   alert(validationResult5.errors[0]);
+      // }
     </script>
   </body>
 </html>
